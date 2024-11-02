@@ -132,5 +132,5 @@ require (
 
 replace (
 	filippo.io/age => github.com/brianmcgee/age v0.0.0-20241002093043-152b6edfe56a
-	github.com/getsops/sops/v3 => github.com/samchouse/sops/v3 v3.0.0-20241029111535-ba04e405c3db
+	github.com/getsops/sops/v3 => github.com/samchouse/sops/v3 v3.0.0-20241102162929-21878be7fdbc
 )

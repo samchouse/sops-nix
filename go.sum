@@ -284,8 +284,8 @@ github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ryanuber/go-glob v1.0.0 h1:iQh3xXAumdQ+4Ufa5b25cRpC5TYKlno6hsv6Cb3pkBk=
 github.com/ryanuber/go-glob v1.0.0/go.mod h1:807d1WSdnB0XRJzKNil9Om6lcp/3a0v4qIHxIXzX/Yc=
-github.com/samchouse/sops/v3 v3.0.0-20241029111535-ba04e405c3db h1:0vdsVZecpAUQn3CIT4m6w/K3GOKH2thuLtYYz3Ac7HI=
-github.com/samchouse/sops/v3 v3.0.0-20241029111535-ba04e405c3db/go.mod h1:f17iPkcEzmXvVwnWEqLm/jW2ZAOuP3ioFcc6zonYxBU=
+github.com/samchouse/sops/v3 v3.0.0-20241102162929-21878be7fdbc h1:oc/cetPldVrJnAQ1hcK3cVvDjYjAwikgwT6ppAzhLNM=
+github.com/samchouse/sops/v3 v3.0.0-20241102162929-21878be7fdbc/go.mod h1:f17iPkcEzmXvVwnWEqLm/jW2ZAOuP3ioFcc6zonYxBU=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
