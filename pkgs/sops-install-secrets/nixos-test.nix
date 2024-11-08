@@ -241,7 +241,7 @@ in {
     testScript = ''
       def assertEqual(exp: str, act: str) -> None:
           if exp != act:
-              raise Exception(f"'{exp}' != '{act}'")
+              raise Exception(f"{exp!r} != {act!r}")
 
 
       start_all()
@@ -260,7 +260,7 @@ in {
 
   templates = testers.runNixOSTest {
     name = "sops-templates";
-    nodes.machine = { config, lib, ... }: {
+    nodes.machine = { config, ... }: {
       imports = [ ../../modules/sops ];
       sops = {
         age.keyFile = "/run/age-keys.txt";
@@ -296,32 +296,37 @@ in {
     };
 
     testScript = ''
-      start_all()
-      machine.succeed("[ $(stat -c%U /run/secrets-rendered/test_template) = 'someuser' ]")
-      machine.succeed("[ $(stat -c%G /run/secrets-rendered/test_template) = 'somegroup' ]")
-      machine.succeed("[ $(stat -c%U /run/secrets-rendered/test_default) = 'root' ]")
-      machine.succeed("[ $(stat -c%G /run/secrets-rendered/test_default) = 'root' ]")
+      def assertEqual(exp: str, act: str) -> None:
+          if exp != act:
+              raise Exception(f"{exp!r} != {act!r}")
 
-      expected = """
+
+      start_all()
+      machine.succeed("[ $(stat -c%U /run/secrets/rendered/test_template) = 'someuser' ]")
+      machine.succeed("[ $(stat -c%G /run/secrets/rendered/test_template) = 'somegroup' ]")
+      machine.succeed("[ $(stat -c%U /run/secrets/rendered/test_default) = 'root' ]")
+      machine.succeed("[ $(stat -c%G /run/secrets/rendered/test_default) = 'root' ]")
+
+      expected = """\
       This line is not modified.
       The next value will be replaced by test_value
       This line is also not modified.
       """
-      rendered = machine.succeed("cat /run/secrets-rendered/test_template")
+      rendered = machine.succeed("cat /run/secrets/rendered/test_template")
 
-      expected_default = """
+      expected_default = """\
       Test value: test_value
       """
-      rendered_default = machine.succeed("cat /run/secrets-rendered/test_default")
+      rendered_default = machine.succeed("cat /run/secrets/rendered/test_default")
 
-      if rendered.strip() != expected.strip() or rendered_default.strip() != expected_default.strip():
-        raise Exception("Template is not rendered correctly")
+      assertEqual(expected, rendered)
+      assertEqual(expected_default, rendered_default)
     '';
   };
 
   restart-and-reload = testers.runNixOSTest {
     name = "sops-restart-and-reload";
-    nodes.machine = { pkgs, lib, config, ... }: {
+    nodes.machine = {config, ...}: {
       imports = [ ../../modules/sops ];
 
       sops = {
@@ -331,6 +336,11 @@ in {
           restartUnits = [ "restart-unit.service" "reload-unit.service" ];
           reloadUnits = [ "reload-trigger.service" ];
         };
+
+        templates.test_template.content = ''
+          this is a template with
+          a secret: ${config.sops.placeholder.test_key}
+        '';
       };
       system.switch.enable = true;
 
@@ -369,6 +379,19 @@ in {
 
     };
     testScript = ''
+      def assertOutput(output, *expected_lines):
+        expected_lines = list(expected_lines)
+
+        # Remove unrelated fluff that shows up in the output of `switch-to-configuration`.
+        prefix = "setting up /etc...\n"
+        if output.startswith(prefix):
+          output = output.removeprefix(prefix)
+
+        actual_lines = output.splitlines(keepends=False)
+
+        if actual_lines != expected_lines:
+          raise Exception(f"{actual_lines} != {expected_lines}")
+
       machine.wait_for_unit("multi-user.target")
       machine.fail("test -f /restarted")
       machine.fail("test -f /reloaded")
@@ -392,46 +415,74 @@ in {
       machine.succeed("test -f /reloaded")
 
       with subtest("change detection"):
-         machine.succeed("rm /run/secrets/test_key")
-         out = machine.succeed("/run/current-system/bin/switch-to-configuration test")
-         if "adding secret" not in out:
-             raise Exception("Addition detection does not work")
+        machine.succeed("rm /run/secrets/test_key")
+        machine.succeed("rm /run/secrets/rendered/test_template")
+        out = machine.succeed("/run/current-system/bin/switch-to-configuration test")
+        assertOutput(
+          out,
+          "adding secret: test_key",
+          "adding rendered secret: test_template",
+        )
 
-         machine.succeed(": > /run/secrets/test_key")
-         out = machine.succeed("/run/current-system/bin/switch-to-configuration test")
-         if "modifying secret" not in out:
-             raise Exception("Modification detection does not work")
+        machine.succeed(": > /run/secrets/test_key")
+        machine.succeed(": > /run/secrets/rendered/test_template")
+        out = machine.succeed("/run/current-system/bin/switch-to-configuration test")
+        assertOutput(
+          out,
+          "modifying secret: test_key",
+          "modifying rendered secret: test_template",
+        )
 
-         machine.succeed(": > /run/secrets/another_key")
-         out = machine.succeed("/run/current-system/bin/switch-to-configuration test")
-         if "removing secret" not in out:
-             raise Exception("Removal detection does not work")
+        machine.succeed(": > /run/secrets/another_key")
+        machine.succeed(": > /run/secrets/rendered/another_template")
+        out = machine.succeed("/run/current-system/bin/switch-to-configuration test")
+        assertOutput(
+          out,
+          "removing secret: another_key",
+          "removing rendered secret: another_template",
+        )
 
       with subtest("dry activation"):
-          machine.succeed("rm /run/secrets/test_key")
-          machine.succeed(": > /run/secrets/another_key")
-          out = machine.succeed("/run/current-system/bin/switch-to-configuration dry-activate")
-          if "would add secret" not in out:
-              raise Exception("Dry addition detection does not work")
-          if "would remove secret" not in out:
-              raise Exception("Dry removal detection does not work")
+        machine.succeed("rm /run/secrets/test_key")
+        machine.succeed("rm /run/secrets/rendered/test_template")
+        machine.succeed(": > /run/secrets/another_key")
+        machine.succeed(": > /run/secrets/rendered/another_template")
+        out = machine.succeed("/run/current-system/bin/switch-to-configuration dry-activate")
+        assertOutput(
+          out,
+          "would add secret: test_key",
+          "would remove secret: another_key",
+          "would add rendered secret: test_template",
+          "would remove rendered secret: another_template",
+        )
 
-          machine.fail("test -f /run/secrets/test_key")
-          machine.succeed("test -f /run/secrets/another_key")
+        # Verify that we did not actually activate the new configuration.
+        machine.fail("test -f /run/secrets/test_key")
+        machine.fail("test -f /run/secrets/rendered/test_template")
+        machine.succeed("test -f /run/secrets/another_key")
+        machine.succeed("test -f /run/secrets/rendered/another_template")
 
-          machine.succeed("/run/current-system/bin/switch-to-configuration test")
-          machine.succeed("test -f /run/secrets/test_key")
-          machine.succeed("rm /restarted /reloaded")
-          machine.fail("test -f /run/secrets/another_key")
+        # Now actually activate and sanity check the resulting secrets.
+        machine.succeed("/run/current-system/bin/switch-to-configuration test")
+        machine.succeed("test -f /run/secrets/test_key")
+        machine.succeed("test -f /run/secrets/rendered/test_template")
+        machine.fail("test -f /run/secrets/another_key")
+        machine.fail("test -f /run/secrets/rendered/another_template")
 
-          machine.succeed(": > /run/secrets/test_key")
-          out = machine.succeed("/run/current-system/bin/switch-to-configuration dry-activate")
-          if "would modify secret" not in out:
-              raise Exception("Dry modification detection does not work")
-          machine.succeed("[ $(cat /run/secrets/test_key | wc -c) = 0 ]")
+        # Remove the restarted/reloaded indicators so we can confirm a
+        # dry-activate doesn't trigger systemd units.
+        machine.succeed("rm /restarted /reloaded")
 
-          machine.fail("test -f /restarted")  # not done in dry mode
-          machine.fail("test -f /reloaded")  # not done in dry mode
+        machine.succeed(": > /run/secrets/test_key")
+        out = machine.succeed("/run/current-system/bin/switch-to-configuration dry-activate")
+        assertOutput(
+          out,
+          "would modify secret: test_key",
+        )
+        machine.succeed("[ $(cat /run/secrets/test_key | wc -c) = 0 ]")
+
+        machine.fail("test -f /restarted")  # not done in dry mode
+        machine.fail("test -f /reloaded")  # not done in dry mode
     '';
   };
 
