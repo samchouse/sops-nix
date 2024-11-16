@@ -51,20 +51,22 @@ type loggingConfig struct {
 }
 
 type template struct {
-	Name    string  `json:"name"`
-	Content string  `json:"content"`
-	Path    string  `json:"path"`
-	Mode    string  `json:"mode"`
-	Owner   *string `json:"owner,omitempty"`
-	UID     int     `json:"uid"`
-	Group   *string `json:"group,omitempty"`
-	GID     int     `json:"gid"`
-	File    string  `json:"file"`
-	value   []byte
-	mode    os.FileMode
-	content string
-	owner   int
-	group   int
+	Name         string   `json:"name"`
+	Content      string   `json:"content"`
+	Path         string   `json:"path"`
+	Mode         string   `json:"mode"`
+	Owner        *string  `json:"owner,omitempty"`
+	UID          int      `json:"uid"`
+	Group        *string  `json:"group,omitempty"`
+	GID          int      `json:"gid"`
+	File         string   `json:"file"`
+	RestartUnits []string `json:"restartUnits"`
+	ReloadUnits  []string `json:"reloadUnits"`
+	value        []byte
+	mode         os.FileMode
+	content      string
+	owner        int
+	group        int
 }
 
 type manifest struct {
@@ -172,51 +174,51 @@ func readManifest(path string) (*manifest, error) {
 	return &m, nil
 }
 
-func linksAreEqual(linkTarget, targetFile string, info os.FileInfo, secret *secret) bool {
+func linksAreEqual(linkTarget, targetFile string, info os.FileInfo, owner int, group int) bool {
 	validUG := true
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		validUG = validUG && int(stat.Uid) == secret.owner
-		validUG = validUG && int(stat.Gid) == secret.group
+		validUG = validUG && int(stat.Uid) == owner
+		validUG = validUG && int(stat.Gid) == group
 	} else {
 		panic("Failed to cast fileInfo Sys() to *syscall.Stat_t. This is possibly an unsupported OS.")
 	}
 	return linkTarget == targetFile && validUG
 }
 
-func symlinkSecret(targetFile string, secret *secret, userMode bool) error {
+func symlinkSecret(targetFile string, path string, owner int, group int, userMode bool) error {
 	for {
-		stat, err := os.Lstat(secret.Path)
+		stat, err := os.Lstat(path)
 		if os.IsNotExist(err) {
-			if err = os.Symlink(targetFile, secret.Path); err != nil {
-				return fmt.Errorf("cannot create symlink '%s': %w", secret.Path, err)
+			if err = os.Symlink(targetFile, path); err != nil {
+				return fmt.Errorf("cannot create symlink '%s': %w", path, err)
 			}
 			if !userMode {
-				if err = SecureSymlinkChown(secret.Path, targetFile, secret.owner, secret.group); err != nil {
-					return fmt.Errorf("cannot chown symlink '%s': %w", secret.Path, err)
+				if err = SecureSymlinkChown(path, targetFile, owner, group); err != nil {
+					return fmt.Errorf("cannot chown symlink '%s': %w", path, err)
 				}
 			}
 			return nil
 		} else if err != nil {
-			return fmt.Errorf("cannot stat '%s': %w", secret.Path, err)
+			return fmt.Errorf("cannot stat '%s': %w", path, err)
 		}
 		if stat.Mode()&os.ModeSymlink == os.ModeSymlink {
-			linkTarget, err := os.Readlink(secret.Path)
+			linkTarget, err := os.Readlink(path)
 			if os.IsNotExist(err) {
 				continue
 			} else if err != nil {
-				return fmt.Errorf("cannot read symlink '%s': %w", secret.Path, err)
-			} else if linksAreEqual(linkTarget, targetFile, stat, secret) {
+				return fmt.Errorf("cannot read symlink '%s': %w", path, err)
+			} else if linksAreEqual(linkTarget, targetFile, stat, owner, group) {
 				return nil
 			}
 		}
-		if err := os.Remove(secret.Path); err != nil {
-			return fmt.Errorf("cannot override %s: %w", secret.Path, err)
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("cannot override %s: %w", path, err)
 		}
 	}
 }
 
-func symlinkSecrets(targetDir string, secrets []secret, userMode bool) error {
-	for i, secret := range secrets {
+func symlinkSecrets(targetDir string, secrets []secret, templates map[string]*template, userMode bool) error {
+	for _, secret := range secrets {
 		targetFile := filepath.Join(targetDir, secret.Name)
 		if targetFile == secret.Path {
 			continue
@@ -225,10 +227,25 @@ func symlinkSecrets(targetDir string, secrets []secret, userMode bool) error {
 		if err := os.MkdirAll(parent, os.ModePerm); err != nil {
 			return fmt.Errorf("cannot create parent directory of '%s': %w", secret.Path, err)
 		}
-		if err := symlinkSecret(targetFile, &secrets[i], userMode); err != nil {
+		if err := symlinkSecret(targetFile, secret.Path, secret.owner, secret.group, userMode); err != nil {
 			return fmt.Errorf("failed to symlink secret '%s': %w", secret.Path, err)
 		}
 	}
+
+	for _, template := range templates {
+		targetFile := filepath.Join(targetDir, RenderedSubdir, template.Name)
+		if targetFile == template.Path {
+			continue
+		}
+		parent := filepath.Dir(template.Path)
+		if err := os.MkdirAll(parent, os.ModePerm); err != nil {
+			return fmt.Errorf("cannot create parent directory of '%s': %w", template.Path, err)
+		}
+		if err := symlinkSecret(targetFile, template.Path, template.owner, template.group, userMode); err != nil {
+			return fmt.Errorf("failed to symlink template '%s': %w", template.Path, err)
+		}
+	}
+
 	return nil
 }
 
@@ -936,6 +953,8 @@ func handleModifications(isDry bool, logcfg loggingConfig, symlinkPath string, s
 		if err != nil {
 			if os.IsNotExist(err) {
 				// File did not exist before
+				restart = append(restart, template.RestartUnits...)
+				reload = append(reload, template.ReloadUnits...)
 				newTemplates[template.Name] = true
 				continue
 			}
@@ -949,6 +968,8 @@ func handleModifications(isDry bool, logcfg loggingConfig, symlinkPath string, s
 		}
 
 		if !bytes.Equal(oldData, newData) {
+			restart = append(restart, template.RestartUnits...)
+			reload = append(reload, template.ReloadUnits...)
 			modifiedTemplates[template.Name] = true
 		}
 	}
@@ -1141,7 +1162,8 @@ func writeTemplates(targetDir string, templates map[string]*template, keysGID in
 		if !userMode {
 			if err := os.Chown(fp, template.owner, template.group); err != nil {
 				return fmt.Errorf("cannot change owner/group of '%s' to %d/%d: %w", fp, template.owner, template.group, err)
-			} }
+			}
+		}
 	}
 	return nil
 }
@@ -1280,7 +1302,7 @@ func installSecrets(args []string) error {
 	if isDry {
 		return nil
 	}
-	if err := symlinkSecrets(manifest.SymlinkPath, manifest.Secrets, manifest.UserMode); err != nil {
+	if err := symlinkSecrets(manifest.SymlinkPath, manifest.Secrets, manifest.Templates, manifest.UserMode); err != nil {
 		return fmt.Errorf("failed to prepare symlinks to secret store: %w", err)
 	}
 	if err := atomicSymlink(*secretDir, manifest.SymlinkPath); err != nil {
