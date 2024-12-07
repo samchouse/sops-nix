@@ -360,9 +360,7 @@ in {
         environment = lib.mkForce cfg.environment;
 
         serviceConfig = {
-          Type = "simple";
           ExecStart = [ "/usr/bin/env bash -c 'while ! pgrep -x 1password; do sleep 1; done && pgrep -x 1password && sleep 5 && ${cfg.package}/bin/sops-install-secrets ${manifest}'" ];
-          RemainAfterExit = true;
         };
       };
 
