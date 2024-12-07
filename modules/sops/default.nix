@@ -356,7 +356,6 @@ in {
 
       # When using sysusers we no longer be started as an activation script because those are started in initrd while sysusers is started later.
       systemd.services.sops-install-secrets = {
-        after = [ "network-online.target" ];
         wantedBy = [ "graphical.target" ];
         environment = lib.mkForce cfg.environment;
 
