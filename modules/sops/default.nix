@@ -355,12 +355,27 @@ in {
       sops.environment.SOPS_GPG_EXEC = lib.mkIf (cfg.gnupg.home != null || cfg.gnupg.sshKeyPaths != []) (lib.mkDefault "${pkgs.gnupg}/bin/gpg");
 
       # When using sysusers we no longer be started as an activation script because those are started in initrd while sysusers is started later.
-      systemd.services.sops-install-secrets = {
-        wantedBy = [ "graphical.target" ];
-        environment = lib.mkForce cfg.environment;
+      systemd = {
+        sockets.sops-secrets = {
+          wantedBy = ["sockets.target"];
+          listenStreams = ["/run/sops-secrets.sock"];
+        };
 
-        serviceConfig = {
-          ExecStart = [ "/usr/bin/env bash -c 'while ! pgrep -x 1password; do sleep 1; done && pgrep -x 1password && sleep 5 && ${cfg.package}/bin/sops-install-secrets ${manifest}'" ];
+        services = {
+          sops-secrets = {
+            serviceConfig = {
+              ExecStart = [ "/bin/sh -c ':'" ];
+              RemainAfterExit = "yes";
+            };
+          };
+          sops-install-secrets = {
+            wantedBy = [ "graphical.target" ];
+            environment = lib.mkForce cfg.environment;
+
+            serviceConfig = {
+              ExecStart = [ "/usr/bin/env bash -c 'while ! pgrep -x 1password >/dev/null; do sleep 1; done && pgrep -x 1password >/dev/null && sleep 5 && ${cfg.package}/bin/sops-install-secrets ${manifest} && echo installed | /usr/bin/env socat - UNIX-CONNECT:/run/sops-secrets.sock'" ];
+            };
+          };
         };
       };
 
