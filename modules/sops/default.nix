@@ -369,6 +369,14 @@ in
         '';
       };
     };
+
+    manifest = lib.mkOption {
+      type = lib.types.str;
+      default = "${manifest}";
+      description = ''
+        DO NOT CHANGE OR SET THIS OPTION!
+      '';
+    };
   };
   imports = [
     ./templates
