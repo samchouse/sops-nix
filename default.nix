@@ -1,6 +1,6 @@
 {
   pkgs ? import <nixpkgs> { },
-  vendorHash ? "sha256-tEgjZf9Ccp/y2j33HIGPoDLh8/um1CZCBzdpDIbv9fc=",
+  vendorHash ? "sha256-b+yUkMeIKiozlrANOwaMY2QDWo0cZYpD9SXZuSgYUQs=",
 }:
 let
   sops-install-secrets = pkgs.callPackage ./pkgs/sops-install-secrets {
@@ -10,6 +10,7 @@ in
 rec {
   inherit sops-install-secrets;
   sops-init-gpg-key = pkgs.callPackage ./pkgs/sops-init-gpg-key { };
+  sops-pgp-hook = pkgs.callPackage ./pkgs/sops-pgp-hook { };
   default = sops-init-gpg-key;
 
   sops-import-keys-hook = pkgs.callPackage ./pkgs/sops-import-keys-hook { };

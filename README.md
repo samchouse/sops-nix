@@ -61,8 +61,7 @@ If you use experimental nix flakes support:
 ``` nix
 {
   inputs.sops-nix.url = "github:Mic92/sops-nix";
-  # optional, not necessary for the module
-  #inputs.sops-nix.inputs.nixpkgs.follows = "nixpkgs";
+  inputs.sops-nix.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = { self, nixpkgs, sops-nix }: {
     # change `yourhostname` to your actual hostname
@@ -72,6 +71,29 @@ If you use experimental nix flakes support:
       modules = [
         ./configuration.nix
         sops-nix.nixosModules.sops
+      ];
+    };
+  };
+}
+```
+
+##### [`nix-darwin`](https://github.com/nix-darwin/nix-darwin)
+
+A module for `nix-darwin` is also available for global install with flakes:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.nix-darwin.url = "github:nix-darwin/nix-darwin/master";
+  inputs.nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
+  inputs.sops-nix.url = "github:Mic92/sops-nix";
+  #inputs.sops-nix.inputs.nixpkgs.follows = "nixpkgs";
+
+  outputs = { self, nix-darwin, nixpkgs, sops-nix }: {
+    darwinConfigurations.yourhostname = nix-darwin.lib.darwinSystem {
+      modules = [
+        ./configuration.nix
+        sops-nix.darwinModules.sops
       ];
     };
   };
@@ -154,6 +176,8 @@ $ ssh-keygen -p -N "" -f /tmp/id_rsa
 $ nix-shell -p gnupg -p ssh-to-pgp --run "ssh-to-pgp -private-key -i /tmp/id_rsa | gpg --import --quiet"
 $ rm /tmp/id_rsa
 ```
+
+When using `nix-darwin` save the `age` key to `$HOME/Library/Application Support/sops/age/keys.txt` or set a [custom](https://github.com/getsops/sops#23encrypting-using-age) configuration directory.
 
 <details>
 <summary> How to find the public key of an `age` key </summary>
@@ -408,7 +432,6 @@ If you derived your server public key from SSH, all you need in your `configurat
 
 ```nix
 {
-  imports = [ <sops-nix/modules/sops> ];
   # This will add secrets.yml to the nix store
   # You can avoid this by adding a string to the full path instead, i.e.
   # sops.defaultSopsFile = "/root/.sops/secrets/example.yaml";
